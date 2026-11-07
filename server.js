@@ -114,6 +114,10 @@ async function handleRequest(request) {
           'Sec-Ch-Ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
           'Sec-Ch-Ua-Mobile': '?0',
           'Sec-Ch-Ua-Platform': '"Windows"',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
           'Upgrade-Insecure-Requests': '1',
         },
       });
@@ -421,6 +425,14 @@ async function handleRequest(request) {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
       'Accept-Language': 'en-US,en;q=0.9',
+      'Sec-Ch-Ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+      'Sec-Ch-Ua-Mobile': '?0',
+      'Sec-Ch-Ua-Platform': '"Windows"',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+      'Upgrade-Insecure-Requests': '1',
       'Referer': 'https://pimpbunny.com/',
     };
 
@@ -517,11 +529,9 @@ async function handleRequest(request) {
     requestedQuality = (reqUrl.searchParams.get('quality') || '').toLowerCase().trim();
   }
 
-  if (targetId && !targetUrl) {
-    const cleanId = targetId.toString().replace(/[^0-9]/g, '');
-    if (cleanId) {
-      targetUrl = `https://pimpbunny.com/embed/${cleanId}/`;
-    }
+  const cleanId = targetId ? targetId.toString().replace(/[^0-9]/g, '') : '';
+  if (cleanId && !targetUrl) {
+    targetUrl = `https://pimpbunny.com/embed/${cleanId}/`;
   }
 
   if (!targetUrl) {
@@ -562,20 +572,23 @@ async function resolvePimpBunnyStreams(pageUrl, requestedQuality = '') {
   const browserUa =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
+  const isEmbed = pageUrl.includes('/embed/');
   const pageHeaders = {
     'User-Agent': browserUa,
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.9',
-    'Referer': 'https://pimpbunny.com/',
+    'Referer': isEmbed ? 'https://wataatube.com/' : 'https://pimpbunny.com/',
     'Sec-Ch-Ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
     'Sec-Ch-Ua-Mobile': '?0',
     'Sec-Ch-Ua-Platform': '"Windows"',
-    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Dest': isEmbed ? 'iframe' : 'document',
     'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Site': 'none',
-    'Sec-Fetch-User': '?1',
+    'Sec-Fetch-Site': isEmbed ? 'cross-site' : 'none',
     'Upgrade-Insecure-Requests': '1',
   };
+  if (!isEmbed) {
+    pageHeaders['Sec-Fetch-User'] = '?1';
+  }
 
   const pageRes = await fetch(pageUrl, {
     method: 'GET',
@@ -587,11 +600,11 @@ async function resolvePimpBunnyStreams(pageUrl, requestedQuality = '') {
   const cdnCountry = pageRes.headers.get('cdn-requestcountrycode') || '';
   const html = await pageRes.text();
 
-  if (!pageRes.ok) {
-    const isBunnyBlocked = html.includes('bunny_shield') || html.includes('errorcode') || statusCode === 403;
+  const isBunnyBlocked = (!pageRes.ok && statusCode === 403) || html.includes('Establishing a secure connection') || html.includes('shield-challenge.js');
+  if (!pageRes.ok || isBunnyBlocked) {
     return {
       success: false,
-      error: `Upstream returned HTTP ${statusCode}`,
+      error: `Upstream returned HTTP ${statusCode}` + (isBunnyBlocked ? ' (BunnyShield Challenge)' : ''),
       status_code: statusCode,
       cdn_country: cdnCountry,
       bunny_shield_blocked: isBunnyBlocked,
@@ -620,7 +633,7 @@ async function resolvePimpBunnyStreams(pageUrl, requestedQuality = '') {
     if (m && m[1]) {
       let rawUrl = m[1].trim();
       if (rawUrl.toLowerCase().includes('upgrade=')) continue;
-      if (rawUrl.includes('/videos/') || rawUrl.endsWith('/')) continue;
+      if (rawUrl.includes('/videos/') && !rawUrl.includes('/get_file/')) continue;
       if (rawUrl.startsWith('//')) {
         rawUrl = 'https:' + rawUrl;
       } else if (rawUrl.startsWith('/')) {
@@ -752,10 +765,12 @@ async function resolveToCdnStorage(rawUrl, refererUrl, cookieStr, browserUa) {
   const reqHeaders = {
     'User-Agent': browserUa,
     'Accept': '*/*',
+    'Accept-Language': 'en-US,en;q=0.9',
     'Referer': refererUrl || 'https://pimpbunny.com/',
-    'Sec-Fetch-Dest': 'empty',
-    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Dest': 'video',
+    'Sec-Fetch-Mode': 'no-cors',
     'Sec-Fetch-Site': 'same-origin',
+    'Range': 'bytes=0-',
   };
   if (cookieStr) {
     reqHeaders['Cookie'] = cookieStr;
