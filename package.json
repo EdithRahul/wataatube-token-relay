@@ -1,0 +1,14 @@
+{
+  "name": "wataatube-token-relay",
+  "version": "1.0.0",
+  "description": "US-based stream and token relay for WataaTube & ChudaiTube",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
+
