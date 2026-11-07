@@ -20,7 +20,7 @@ async function handleRequest(request) {
       JSON.stringify({
         status: 'ok',
         service: 'WataaTube Token Relay (Render US)',
-        version: '1.5.0',
+        version: '1.6.0',
         platform: 'render',
         region: process.env.RENDER_REGION || 'US',
         timestamp: Date.now(),
@@ -239,38 +239,42 @@ async function resolvePimpBunnyStreams(pageUrl, requestedQuality = '') {
   }
 
   const resolved = {};
-  let targetQuality = '';
+  
+  // Resolve ALL available qualities in parallel (1080p, 720p, 480p, 360p)
+  const qualityTasks = Object.keys(rawStreams).map(async (qk) => {
+    try {
+      const finalStream = await resolveToCdnStorage(rawStreams[qk], pageUrl, cookieStr, browserUa);
+      if (finalStream) {
+        resolved[qk] = finalStream;
+      }
+    } catch (e) {}
+  });
 
-  if (requestedQuality === 'preview') {
+  // Concurrently resolve preview clip if needed
+  const previewTask = (async () => {
     if (previewUrl && !previewUrl.includes('remote_control.php')) {
       try {
         const resolvedPrev = await resolveToCdnStorage(previewUrl, pageUrl, cookieStr, browserUa);
         if (resolvedPrev) previewUrl = resolvedPrev;
       } catch (e) {}
     }
+  })();
+
+  await Promise.all([...qualityTasks, previewTask]);
+
+  // Determine default stream: requested quality, or prefer 720p HD, then 1080p, 480p, 360p
+  let defaultQuality = '';
+  if (requestedQuality && resolved[requestedQuality]) {
+    defaultQuality = requestedQuality;
+  } else if (resolved['720p']) {
+    defaultQuality = '720p';
+  } else if (resolved['1080p']) {
+    defaultQuality = '1080p';
+  } else if (resolved['480p']) {
+    defaultQuality = '480p';
   } else {
-    // Select requested quality, or prefer highest available real stream (1080p, 720p, 480p, 360p)
-    if (requestedQuality && rawStreams[requestedQuality]) {
-      targetQuality = requestedQuality;
-    } else if (rawStreams['720p']) {
-      targetQuality = '720p';
-    } else if (rawStreams['1080p']) {
-      targetQuality = '1080p';
-    } else if (rawStreams['480p']) {
-      targetQuality = '480p';
-    } else {
-      targetQuality = Object.keys(rawStreams)[0] || '';
-    }
-
-    if (targetQuality && rawStreams[targetQuality]) {
-      const finalStream = await resolveToCdnStorage(rawStreams[targetQuality], pageUrl, cookieStr, browserUa);
-      if (finalStream) {
-        resolved[targetQuality] = finalStream;
-      }
-    }
+    defaultQuality = Object.keys(resolved)[0] || '720p';
   }
-
-  const defaultQuality = targetQuality || Object.keys(resolved)[0] || '720p';
   const defaultUrl = resolved[defaultQuality] || Object.values(resolved)[0] || '';
 
   let tokenExpiry = 0;
